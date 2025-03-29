@@ -1,5 +1,5 @@
-# Use an official Go runtime as a parent image
-FROM golang:1.21-bookworm AS builder
+# Use an official Go runtime as a parent image (matching go.mod)
+FROM golang:1.24-bookworm AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
