@@ -672,3 +672,30 @@ func BenchmarkArgs(b *testing.B) {
 		pdfg.Args()
 	}
 }
+
+func TestMarkdownPage(t *testing.T) {
+	// Use a new blank PDF generator
+	pdfg, err := NewPDFGenerator()
+	require.NoError(t, err, "Failed to create PDFGenerator")
+
+	// Create and add a markdown page
+	mdPage := NewMarkdownPage("testdata/testmd.md")
+	pdfg.AddPage(mdPage)
+
+	// Create the PDF
+	err = pdfg.Create()
+	require.NoError(t, err, "Failed to create PDF from Markdown")
+
+	// Check the output buffer
+	pdfBytes := pdfg.Bytes()
+	assert.NotEmpty(t, pdfBytes, "PDF output buffer should not be empty")
+
+	// Check for PDF magic number
+	assert.True(t, bytes.HasPrefix(pdfBytes, []byte("%PDF-")), "Output does not start with PDF magic number")
+
+	// Optional: Write to file for manual inspection
+	// err = pdfg.WriteFile("testdata/TestMarkdownPage.pdf")
+	// require.NoError(t, err, "Failed to write test PDF file")
+
+	t.Logf("Markdown PDF size %vkB", len(pdfBytes)/1024)
+}

@@ -1,7 +1,13 @@
-// Package wkhtmltopdf contains wrappers around the wkhtmltopdf commandline tool
+// Package wkhtmltopdf provides Go bindings for the wkhtmltopdf command-line tool,
+// allowing generation of PDFs from HTML content.
+//
+// This package is a fork of github.com/SebastiaanKlippert/go-wkhtmltopdf,
+// originally created by Sebastiaan Klippert, with added features for Markdown
+// processing and enhanced configuration options by LocalRivet.
 package wkhtmltopdf
 
 import (
+	"bufio" // Added for scanner in Reader
 	"bytes"
 	"context"
 	"errors"
@@ -12,6 +18,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
 )
 
 // the cached mutexed path as used by findPath()
@@ -50,6 +60,11 @@ type Page struct {
 	PageOptions
 }
 
+// Options returns the PageOptions associated with this Page.
+func (p *Page) Options() *PageOptions {
+	return &p.PageOptions
+}
+
 // InputFile returns the input string and is part of the page interface
 func (p *Page) InputFile() string {
 	return p.Input
@@ -80,6 +95,11 @@ type PageReader struct {
 	PageOptions
 }
 
+// Options returns the PageOptions associated with this PageReader.
+func (pr *PageReader) Options() *PageOptions {
+	return &pr.PageOptions
+}
+
 // InputFile returns the input string and is part of the page interface
 func (pr *PageReader) InputFile() string {
 	return "-"
@@ -103,12 +123,156 @@ func NewPageReader(input io.Reader) *PageReader {
 	}
 }
 
+// MarkdownPage represents a page created from a Markdown file.
+// The Markdown content will be converted to HTML internally before being passed to wkhtmltopdf.
+// It implements the PageProvider interface.
+type MarkdownPage struct {
+	// InputPath is the filesystem path to the Markdown file.
+	InputPath string
+	// SkipFirstH1H2, if true, attempts to remove the first H1 heading and the
+	// immediately following H2 heading (if present) from the Markdown content
+	// before converting to HTML. This is useful if the H1/H2 are used for a
+	// separate cover page.
+	SkipFirstH1H2 bool
+	PageOptions
+	htmlCache []byte // Cache for the converted HTML
+	readErr   error  // Store error during file read/conversion
+}
+
+// Options returns the PageOptions associated with this MarkdownPage.
+func (mp *MarkdownPage) Options() *PageOptions {
+	return &mp.PageOptions
+}
+
+// NewMarkdownPage creates a new MarkdownPage provider from a Markdown file path.
+// By default, SkipFirstH1H2 is false.
+func NewMarkdownPage(inputPath string) *MarkdownPage {
+	return &MarkdownPage{
+		InputPath:     inputPath,
+		SkipFirstH1H2: false, // Default to false
+		PageOptions:   NewPageOptions(),
+	}
+}
+
+// Args returns the argument slice and is part of the page interface
+func (mp *MarkdownPage) Args() []string {
+	return mp.PageOptions.Args()
+}
+
+// InputFile returns "-" as Markdown is converted and piped via stdin.
+func (mp *MarkdownPage) InputFile() string {
+	return "-"
+}
+
+// Reader reads the Markdown file, converts it to HTML, and returns it as an io.Reader.
+// It caches the result to avoid re-reading and re-converting.
+// If SkipFirstH1H2 is true, it attempts to skip the first H1 and subsequent H2 block.
+func (mp *MarkdownPage) Reader() io.Reader {
+	if mp.htmlCache != nil || mp.readErr != nil {
+		if mp.readErr != nil {
+			// Return a reader that immediately returns the stored error
+			return &errorReader{err: mp.readErr}
+		}
+		return bytes.NewReader(mp.htmlCache)
+	}
+
+	mdBytesAll, err := os.ReadFile(mp.InputPath)
+	if err != nil {
+		mp.readErr = fmt.Errorf("failed to read markdown file %s: %w", mp.InputPath, err)
+		return &errorReader{err: mp.readErr}
+	}
+
+	mdBytesToParse := mdBytesAll // Default to parsing all bytes
+	if mp.SkipFirstH1H2 {
+		// Find the end of the first H1/H2 block to skip it
+		scanner := bufio.NewScanner(bytes.NewReader(mdBytesAll))
+		var byteOffset int
+		foundH1 := false
+		skipped := false
+		linesToSkip := 0 // Count lines belonging to H1/H2 block
+
+		for scanner.Scan() {
+			line := scanner.Text() // Keep original line endings
+			trimmedLine := strings.TrimSpace(line)
+			// Use scanner.Bytes() for accurate length with potentially different line endings
+			lineLen := len(scanner.Bytes()) + 1 // +1 for newline character
+
+			if !foundH1 && strings.HasPrefix(trimmedLine, "# ") {
+				foundH1 = true
+				byteOffset += lineLen
+				linesToSkip++
+			} else if foundH1 && strings.HasPrefix(trimmedLine, "## ") {
+				// Found H2 immediately after H1 (or whitespace)
+				byteOffset += lineLen
+				linesToSkip++
+				mdBytesToParse = mdBytesAll[byteOffset:]
+				skipped = true
+				break
+			} else if foundH1 && trimmedLine != "" {
+				// Found H1, but the next non-empty line wasn't H2
+				mdBytesToParse = mdBytesAll[byteOffset:] // Skip only the H1 line(s)
+				skipped = true
+				break
+			} else if foundH1 && trimmedLine == "" { // Allow whitespace between H1 and H2
+				byteOffset += lineLen
+				linesToSkip++ // Count blank lines as part of the block to skip
+			} else if !foundH1 { // Before H1
+				byteOffset += lineLen // Accumulate offset but don't count as skipped lines yet
+			} else {
+				// Should not happen if logic is correct, but break just in case
+				break
+			}
+		}
+		if !skipped {
+			// If we didn't find H1 or H2 as expected, parse everything
+			// (or log a warning, but for now just parse all)
+			mdBytesToParse = mdBytesAll
+		} else if err := scanner.Err(); err != nil {
+			// Handle potential scanner error after finding skip point
+			mp.readErr = fmt.Errorf("error scanning markdown to skip H1/H2: %w", err)
+			return &errorReader{err: mp.readErr}
+		}
+	}
+
+	// Configure markdown parser and renderer
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
+	p := parser.NewWithExtensions(extensions)
+	doc := p.Parse(mdBytesToParse) // Parse the potentially truncated bytes
+
+	htmlFlags := html.CommonFlags | html.HrefTargetBlank
+	opts := html.RendererOptions{Flags: htmlFlags}
+	renderer := html.NewRenderer(opts)
+
+	// Render the main markdown body
+	bodyContent := markdown.Render(doc, renderer)
+
+	// Wrap in basic HTML structure WITHOUT injecting styles here.
+	// Styling will be handled by the external CSS file set via SetUserStyleSheet.
+	var fullHTML bytes.Buffer
+	fullHTML.WriteString("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title></title></head><body>") // Removed <style> block
+	fullHTML.Write(bodyContent)
+	fullHTML.WriteString("</body></html>")
+
+	mp.htmlCache = fullHTML.Bytes()
+	return bytes.NewReader(mp.htmlCache)
+}
+
+// Helper type to return an error from an io.Reader
+type errorReader struct {
+	err error
+}
+
+func (er *errorReader) Read(p []byte) (n int, err error) {
+	return 0, er.err
+}
+
 // PageProvider is the interface which provides a single input page.
-// Implemented by Page and PageReader.
+// Implemented by Page, PageReader, and MarkdownPage.
 type PageProvider interface {
 	Args() []string
 	InputFile() string
 	Reader() io.Reader
+	Options() *PageOptions // Added method to access PageOptions
 }
 
 // PageOptions are options for each input page
@@ -157,11 +321,17 @@ type PDFGenerator struct {
 	TOC        toc
 	OutputFile string //filename to write to, default empty (writes to internal buffer)
 
+	// Global settings applied to pages added after these are set
+	userStyleSheetPath string
+	headerHTMLPath     string
+	footerHTMLPath     string
+	replace            mapOption // Added global replace map
+
 	binPath   string
 	outbuf    bytes.Buffer
 	outWriter io.Writer
 	stdErr    io.Writer
-	pages     []PageProvider
+	pages     []PageProvider // Keep track of added pages
 }
 
 // Args returns the commandline arguments as a string slice
@@ -199,8 +369,42 @@ func (pdfg *PDFGenerator) ArgString() string {
 
 // AddPage adds a new input page to the document.
 // A page is an input HTML page, it can span multiple pages in the output document.
-// It is a Page when read from file or URL or a PageReader when read from memory.
+// It is a Page when read from file or URL, a PageReader when read from memory,
+// or a MarkdownPage when read from a Markdown file.
+//
+// It applies the generator's global settings (stylesheet, header, footer, replacements)
+// to the page's options if they are not already set on the page itself.
+// Page-specific options always take precedence over global settings.
 func (pdfg *PDFGenerator) AddPage(p PageProvider) {
+	opts := p.Options()
+
+	// Apply global stylesheet if not set on page
+	if pdfg.userStyleSheetPath != "" && opts.UserStyleSheet.value == "" {
+		opts.UserStyleSheet.Set(pdfg.userStyleSheetPath)
+	}
+
+	// Apply global header if not set on page
+	if pdfg.headerHTMLPath != "" && opts.HeaderHTML.value == "" {
+		opts.HeaderHTML.Set(pdfg.headerHTMLPath)
+	}
+
+	// Apply global footer if not set on page
+	if pdfg.footerHTMLPath != "" && opts.FooterHTML.value == "" {
+		opts.FooterHTML.Set(pdfg.footerHTMLPath)
+	}
+
+	// Apply global replacements if not already set on page
+	if pdfg.replace.value != nil {
+		if opts.Replace.value == nil {
+			opts.Replace.value = make(map[string]string)
+		}
+		for k, v := range pdfg.replace.value {
+			if _, exists := opts.Replace.value[k]; !exists {
+				opts.Replace.value[k] = v
+			}
+		}
+	}
+
 	pdfg.pages = append(pdfg.pages, p)
 }
 
@@ -236,6 +440,43 @@ func (pdfg *PDFGenerator) SetOutput(w io.Writer) {
 // output of Stderr is kept in an internal buffer and returned as error message if there was an error when calling wkhtmltopdf.
 func (pdfg *PDFGenerator) SetStderr(w io.Writer) {
 	pdfg.stdErr = w
+}
+
+// SetUserStyleSheet sets a global CSS stylesheet path to be applied to all subsequent pages added via AddPage.
+// This setting overrides any UserStyleSheet setting on individual PageOptions unless the path is empty.
+// It corresponds to the --user-style-sheet wkhtmltopdf option.
+func (pdfg *PDFGenerator) SetUserStyleSheet(path string) {
+	pdfg.userStyleSheetPath = path
+}
+
+// SetHeaderHTML sets a global header HTML file path to be applied to all subsequent pages added via AddPage.
+// This setting overrides any HeaderHTML setting on individual PageOptions unless the path is empty.
+// It corresponds to the --header-html wkhtmltopdf option.
+func (pdfg *PDFGenerator) SetHeaderHTML(path string) {
+	pdfg.headerHTMLPath = path
+}
+
+// SetFooterHTML sets a global footer HTML file path to be applied to all subsequent pages added via AddPage.
+// This setting overrides any FooterHTML setting on individual PageOptions unless the path is empty.
+// It corresponds to the --footer-html wkhtmltopdf option.
+func (pdfg *PDFGenerator) SetFooterHTML(path string) {
+	pdfg.footerHTMLPath = path
+}
+
+// SetReplace adds a key-value pair for replacement in headers and footers (e.g., [date], [page], [author]).
+// These replacements are applied globally to pages added after this call, unless a replacement
+// with the same key is already defined specifically for a page.
+// It corresponds to the --replace wkhtmltopdf option.
+func (pdfg *PDFGenerator) SetReplace(key, value string) {
+	pdfg.replace.Set(key, value)
+}
+
+// SetCover sets the cover page from an HTML file path.
+// Options for the cover page (like zoom, margins) can be set directly via pdfg.Cover.pageOptions.
+// It corresponds to the cover wkhtmltopdf command.
+func (pdfg *PDFGenerator) SetCover(path string) {
+	pdfg.Cover.Input = path
+	// Note: Cover page options can be set directly via pdfg.Cover.pageOptions if needed.
 }
 
 // WriteFile writes the contents of the output buffer to a file
@@ -401,5 +642,9 @@ func NewPDFPreparer() *PDFGenerator {
 				headerAndFooterOptions: newHeaderAndFooterOptions(),
 			},
 		},
+		userStyleSheetPath: "", // Initialize new fields
+		headerHTMLPath:     "",
+		footerHTMLPath:     "",
+		replace:            mapOption{option: "replace"}, // Initialize replace map
 	}
 }

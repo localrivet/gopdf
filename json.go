@@ -17,9 +17,11 @@ type jsonPDFGenerator struct {
 }
 
 type jsonPage struct {
+	Type           string // "page", "reader", or "markdown"
 	PageOptions    PageOptions
-	InputFile      string
-	Base64PageData string
+	InputFile      string // URL/Path for Page, "-" for Reader/Markdown
+	InputPath      string // Path for MarkdownPage
+	Base64PageData string // Base64 content for Reader/Markdown
 }
 
 // ToJSON creates JSON of the complete representation of the PDFGenerator.
@@ -35,21 +37,42 @@ func (pdfg *PDFGenerator) ToJSON() ([]byte, error) {
 
 	for _, p := range pdfg.pages {
 		jp := jsonPage{
-			InputFile: p.InputFile(),
+			InputFile: p.InputFile(), // Get InputFile value ("-" or path/URL)
 		}
+		var pageContentReader io.Reader // To store reader for Base64 encoding if needed
+
 		switch tp := p.(type) {
 		case *Page:
-			jp.PageOptions = tp.PageOptions
+			jp.Type = "page"
+			jp.PageOptions = *tp.Options() // Use Options() method
+			// No Base64 data needed for Page type
 		case *PageReader:
-			jp.PageOptions = tp.PageOptions
+			jp.Type = "reader"
+			jp.PageOptions = *tp.Options()
+			pageContentReader = tp.Reader() // Get the reader for Base64 encoding
+		case *MarkdownPage:
+			jp.Type = "markdown"
+			jp.PageOptions = *tp.Options()
+			jp.InputPath = tp.InputPath     // Store original Markdown path
+			pageContentReader = tp.Reader() // Get the reader (provides converted HTML) for Base64 encoding
+		default:
+			// Should not happen if all PageProvider types are handled
+			return nil, fmt.Errorf("unknown PageProvider type encountered during JSON serialization: %T", p)
 		}
-		if p.Reader() != nil {
-			buf, err := io.ReadAll(p.Reader())
+
+		// If it's a type that provides content via Reader (PageReader or MarkdownPage)
+		if pageContentReader != nil {
+			buf, err := io.ReadAll(pageContentReader)
 			if err != nil {
-				return nil, err
+				// Check if it's our specific errorReader from MarkdownPage conversion failure
+				if er, ok := pageContentReader.(*errorReader); ok {
+					return nil, fmt.Errorf("error reading content for JSON serialization (from %s): %w", jp.Type, er.err)
+				}
+				return nil, fmt.Errorf("error reading content for JSON serialization (from %s): %w", jp.Type, err)
 			}
 			jp.Base64PageData = base64.StdEncoding.EncodeToString(buf)
 		}
+
 		jpdf.Pages = append(jpdf.Pages, jp)
 	}
 	return json.Marshal(jpdf)
@@ -77,21 +100,43 @@ func NewPDFGeneratorFromJSON(jsonReader io.Reader) (*PDFGenerator, error) {
 	pdfg.outlineOptions = jp.OutlineOptions
 
 	for i, p := range jp.Pages {
-		if p.Base64PageData == "" {
-			pdfg.AddPage(&Page{
-				Input:       p.InputFile,
-				PageOptions: p.PageOptions,
-			})
-			continue
+		switch p.Type {
+		case "page":
+			// InputFile should contain the URL or path
+			if p.InputFile == "" || p.InputFile == "-" {
+				return nil, fmt.Errorf("invalid InputFile value for page type on page %d", i)
+			}
+			page := NewPage(p.InputFile)
+			page.PageOptions = p.PageOptions // Restore options
+			pdfg.AddPage(page)
+
+		case "reader":
+			// Content should be in Base64PageData
+			if p.Base64PageData == "" {
+				return nil, fmt.Errorf("missing Base64PageData for reader type on page %d", i)
+			}
+			buf, err := base64.StdEncoding.DecodeString(p.Base64PageData)
+			if err != nil {
+				return nil, fmt.Errorf("error decoding base64 input for reader type on page %d: %w", i, err)
+			}
+			pageReader := NewPageReader(bytes.NewReader(buf))
+			pageReader.PageOptions = p.PageOptions // Restore options
+			pdfg.AddPage(pageReader)
+
+		case "markdown":
+			// InputPath should contain the original Markdown file path
+			if p.InputPath == "" {
+				return nil, fmt.Errorf("missing InputPath for markdown type on page %d", i)
+			}
+			// Recreate MarkdownPage from the path; it will handle reading/conversion
+			markdownPage := NewMarkdownPage(p.InputPath)
+			markdownPage.PageOptions = p.PageOptions // Restore options
+			pdfg.AddPage(markdownPage)
+			// Note: We ignore Base64PageData here, relying on InputPath for Markdown
+
+		default:
+			return nil, fmt.Errorf("unknown page type %q encountered during JSON deserialization on page %d", p.Type, i)
 		}
-		buf, err := base64.StdEncoding.DecodeString(p.Base64PageData)
-		if err != nil {
-			return nil, fmt.Errorf("error decoding base 64 input on page %d: %s", i, err)
-		}
-		pdfg.AddPage(&PageReader{
-			Input:       bytes.NewReader(buf),
-			PageOptions: p.PageOptions,
-		})
 	}
 
 	return pdfg, nil

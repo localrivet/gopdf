@@ -1,0 +1,124 @@
+/* Basic Theme for Markdown PDF */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 12pt; /* Base font size */
+  line-height: 1.6;
+  color: #333;
+  margin: 0; /* Body margins are controlled by wkhtmltopdf options */
+  margin: 0; /* Body margins are controlled by wkhtmltopdf options */
+  margin: 0; /* Body margins are controlled by wkhtmltopdf options */
+  padding: 0;
+}
+
+/* --- Page Break Rules --- */
+h1 {
+  page-break-before: always;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+strong,
+b {
+  page-break-after: avoid;
+}
+
+p {
+  page-break-inside: avoid;
+}
+/* --- End Page Break Rules --- */
+
+h1,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: bold; /* Make headings bolder */
+  line-height: 1.25;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #111;
+}
+
+h1 {
+  font-size: 2.2em; /* Adjusted heading size */
+  /* border-bottom: 1px solid #eee; */ /* Removed */
+  /* padding-bottom: 0.3em; */ /* Removed */
+}
+
+h2 {
+  font-size: 1.7em; /* Adjusted heading size */
+  /* border-bottom: 1px solid #eee; */ /* Removed */
+  /* padding-bottom: 0.3em; */ /* Removed */
+}
+
+h3 {
+  font-size: 1.4em; /* Adjusted heading size */
+}
+
+h4 {
+  font-size: 1.1em; /* Adjusted heading size */
+}
+
+/* h5 and h6 will inherit body size if not specified, or use 1em */
+
+p {
+  margin-bottom: 1em;
+}
+
+ul,
+ol {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+
+li {
+  margin-bottom: 0.25em;
+}
+
+code {
+  font-family: monospace;
+  background-color: #f8f8f8;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+pre {
+  background-color: #f8f8f8;
+  padding: 1em;
+  border-radius: 3px;
+  overflow-x: auto;
+}
+
+pre code {
+  padding: 0;
+  background-color: transparent;
+}
+
+blockquote {
+  border-left: 4px solid #ddd;
+  padding-left: 1em;
+  color: #666;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+hr {
+  /* border: 0;
+    height: 1px;
+    background-color: #ddd;
+    margin: 2em 0; */
+  display: none; /* Hide horizontal rules */
+}
+
+strong,
+b {
+  font-weight: bold; /* Ensure bold is applied */
+}

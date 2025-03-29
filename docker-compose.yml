@@ -1,0 +1,8 @@
+services:
+  gopdf-mcp-server:
+    build: .
+    image: gopdf-mcp-server:latest # Tag the image for easier reference
+    # No ports needed as communication is via stdio managed by the client
+    # Volumes might be needed if the runner needs access to files outside
+    # the paths provided in arguments (e.g., relative theme paths),
+    # but for now, assume absolute paths or paths relative to CWD will be passed.

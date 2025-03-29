@@ -1,171 +1,185 @@
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/SebastiaanKlippert/go-wkhtmltopdf)](https://pkg.go.dev/github.com/SebastiaanKlippert/go-wkhtmltopdf)
-[![Go Report Card](https://goreportcard.com/badge/SebastiaanKlippert/go-wkhtmltopdf)](https://goreportcard.com/report/SebastiaanKlippert/go-wkhtmltopdf)
-[![codebeat badge](https://codebeat.co/badges/a6bb7f66-7ae2-4de8-8b61-623ef68096c9)](https://codebeat.co/projects/github-com-sebastiaanklippert-go-wkhtmltopdf-master)
-[![codecov](https://codecov.io/gh/SebastiaanKlippert/go-wkhtmltopdf/branch/master/graph/badge.svg)](https://codecov.io/gh/SebastiaanKlippert/go-wkhtmltopdf)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/localrivet/gopdf)](https://pkg.go.dev/github.com/localrivet/gopdf)
 
-[![Build Status](https://github.com/SebastiaanKlippert/go-wkhtmltopdf/actions/workflows/ubuntu.yml/badge.svg?branch=master)](https://github.com/SebastiaanKlippert/go-wkhtmltopdf/actions/workflows/ubuntu.yml)
-[![Build Status](https://github.com/SebastiaanKlippert/go-wkhtmltopdf/actions/workflows/macos.yml/badge.svg?branch=master)](https://github.com/SebastiaanKlippert/go-wkhtmltopdf/actions/workflows/macos.yml)
+<!-- TODO: Add localrivet/gopdf specific badges (Build Status, Codecov, Report Card) if CI/setup is done -->
 
-# go-wkhtmltopdf
-Golang commandline wrapper for wkhtmltopdf
+# gopdf (go-wkhtmltopdf Fork)
 
-See http://wkhtmltopdf.org/index.html for wkhtmltopdf docs.
+Golang commandline wrapper for `wkhtmltopdf`, extended with Markdown support and enhanced configuration.
 
-| :warning: WARNING          |
-|:---------------------------|
-| wkhtmltopdf is no longer maintained and now archived on GitHub. See https://wkhtmltopdf.org/status.html |
-| This go package is still maintained and will be for a while, but I recommend looking for alternatives for new projects. |
+**Note:** This package is a fork of the excellent [go-wkhtmltopdf](https://github.com/SebastiaanKlippert/go-wkhtmltopdf) library, originally created by Sebastiaan Klippert. Many thanks to Sebastiaan for the original work! This fork adds features specifically tailored for generating documents from Markdown with custom themes and layouts.
 
+See http://wkhtmltopdf.org/index.html for the underlying `wkhtmltopdf` tool documentation.
 
-# What and why
-We needed a way to generate PDF documents from Go. These vary from invoices with highly customizable lay-outs to reports with tables, graphs and images. In our opinion the best way to do this was by using HTML/CSS templates as source for our PDFs. Using CSS print media types and millimeters instead of pixel units we can generate very acurate PDF documents using wkhtmltopdf.
+| :warning: WARNING                                                                                                                  |
+| :--------------------------------------------------------------------------------------------------------------------------------- |
+| The underlying `wkhtmltopdf` tool is no longer maintained and now archived on GitHub. See https://wkhtmltopdf.org/status.html      |
+| Consider alternatives like [Gotenberg](https://gotenberg.dev/) for new projects requiring robust, maintained PDF generation.       |
+| This Go package fork (`gopdf`) may receive updates specific to LocalRivet's needs but relies on the archived `wkhtmltopdf` binary. |
 
-go-wkhtmltopdf is a pure Golang wrapper around the wkhtmltopdf command line utility.
+# What and Why
 
-It has all options typed out as struct members which makes it very easy to use if you use an IDE with
-code completion and it has type safety for all options.
-For example you can set general options like
-```go
-pdfg.Dpi.Set(600)
-pdfg.NoCollate.Set(false)
-pdfg.PageSize.Set(PageSizeA4)
-pdfg.MarginBottom.Set(40)
-``` 
-The same goes for adding pages, settings page options, TOC options per page etc.
+This Go package provides a wrapper around the `wkhtmltopdf` command-line utility. It allows generating PDF documents from HTML content, making it suitable for creating invoices, reports, and other documents with customizable layouts using HTML/CSS.
 
-It takes care of setting the correct order of options as these can become very long with muliple pages where 
-you have page and TOC options for each page.
+Key features from the original library include:
 
-Secondly it makes usage in server-type applications easier, every instance (PDF process) has its own output buffer 
-which contains the PDF output and you can feed one input document from an io.Reader (using stdin in wkhtmltopdf).
-You can combine any number of external HTML documents (HTTP(S) links) with at most one HTML document from stdin and set 
-options for each input document.
+- **Typed Options:** All `wkhtmltopdf` command-line options are represented as typed struct members, providing type safety and easier use with IDE code completion.
+- **Input Flexibility:** Accepts multiple input sources, including URLs (`NewPage`) and `io.Reader` interfaces (`NewPageReader`) for processing in-memory HTML or local files. At most one input can be from an `io.Reader` (piped via stdin).
+- **Concurrency:** Each `PDFGenerator` instance manages its own process and output buffer, suitable for server applications.
+- **Output Options:** Generated PDFs can be retrieved from an internal buffer (`Bytes()`, `Buffer()`), written directly to a file (`WriteFile()`), or written to any `io.Writer` (`SetOutput()`).
 
-Note: You can also ignore the internal buffer and let wkhtmltopdf write directly to disk if required for large files, or use the [SetOutput](https://godoc.org/github.com/SebastiaanKlippert/go-wkhtmltopdf#PDFGenerator.SetOutput) method to pass any `io.Writer`.
+## Fork Additions
 
-For us this is one of the easiest ways to generate PDF documents from Go(lang) and performance is very acceptable.
+This fork (`gopdf`) extends the original functionality with:
+
+- **Markdown Input:** Directly generate PDFs from Markdown files using `NewMarkdownPage("path/to/file.md")`. The library handles the conversion from Markdown to HTML internally using `github.com/gomarkdown/markdown`.
+- **Simplified Configuration:** Added convenience methods for common PDF elements:
+  - `SetUserStyleSheet(path string)`: Apply a global CSS theme to all pages.
+  - `SetCover(path string)`: Easily add a cover page from an HTML file.
+  - `SetHeaderHTML(path string)` / `SetFooterHTML(path string)`: Set global header/footer HTML files.
+  - `SetReplace(key, value string)`: Define global key-value pairs for substitution in headers/footers (e.g., `[author]`).
+- **Cover Page Generation Helper:** Includes an example (`cmd/example/example.go`) demonstrating how to automatically generate a basic HTML cover page from the first H1/H2 titles in a Markdown file.
+- **Content Skipping:** The `MarkdownPage` type includes a `SkipFirstH1H2 bool` flag. When set to `true`, the library attempts to skip the initial H1 and subsequent H2 block from the Markdown content when rendering the main document body (useful when that content is already used on a cover page).
+- **Layout Control via CSS:** The Markdown-to-HTML conversion allows for CSS (applied via `SetUserStyleSheet`) to control page breaks (e.g., `page-break-before`, `page-break-after`, `page-break-inside`) for better document flow. Example rules are included in `testdata/theme.css`.
 
 # Installation
-go get or use a Go dependency manager of your liking.
 
+```bash
+go get -u github.com/localrivet/gopdf
 ```
-go get -u github.com/SebastiaanKlippert/go-wkhtmltopdf
-```
 
-go-wkhtmltopdf finds the path to wkhtmltopdf by
-* first looking in the current dir
-* looking in the PATH and PATHEXT environment dirs
-* using the WKHTMLTOPDF_PATH environment dir
+Ensure the `wkhtmltopdf` binary (version 0.12.6 recommended) is installed and accessible in your system's PATH.
 
-**Warning**: Running executables from the current path is no longer possible in Go 1.19, see https://pkg.go.dev/os/exec@master#hdr-Executables_in_the_current_directory
-
-If you need to set your own wkhtmltopdf path or want to change it during execution, you can call SetPath().
-
-# Usage
-See testfile ```wkhtmltopdf_test.go``` for more complex options, a common use case test is in ```simplesample_test.go``` 
+Alternatively, you can specify the path to the binary:
 
 ```go
-package wkhtmltopdf
+wkhtmltopdf.SetPath("/path/to/your/wkhtmltopdf")
+```
+
+`gopdf` finds the path to `wkhtmltopdf` by:
+
+- first looking in the current dir (Note: Go 1.19+ restricts this - see https://pkg.go.dev/os/exec@master#hdr-Executables_in_the_current_directory)
+- looking in the PATH environment variable
+- using the WKHTMLTOPDF_PATH environment variable
+
+# Usage
+
+## Basic Markdown to PDF Example
+
+```go
+package main
 
 import (
-  "fmt"
-  "log"
+	"log"
+
+	wkhtmltopdf "github.com/localrivet/gopdf" // Use the new module path
 )
 
-func ExampleNewPDFGenerator() {
+func main() {
+	// Initialize PDF generator
+	pdfg, err := wkhtmltopdf.NewPDFGenerator()
+	if err != nil {
+		log.Fatalf("Failed to create PDF generator: %v", err)
+	}
 
-  // Create new PDF generator
-  pdfg, err := NewPDFGenerator()
-  if err != nil {
-    log.Fatal(err)
-  }
+	// --- Configure Appearance ---
+	pdfg.PageSize.Set(wkhtmltopdf.PageSizeLetter)
+	pdfg.MarginTopUnit.Set("25mm")    // ~1 inch
+	pdfg.MarginBottomUnit.Set("25mm") // ~1 inch
+	pdfg.MarginLeftUnit.Set("25mm")   // ~1 inch
+	pdfg.MarginRightUnit.Set("25mm")  // ~1 inch
 
-  // Set global options
-  pdfg.Dpi.Set(300)
-  pdfg.Orientation.Set(OrientationLandscape)
-  pdfg.Grayscale.Set(true)
+	// Apply a theme, footer, and header (optional)
+	pdfg.SetUserStyleSheet("path/to/your/theme.css")
+	pdfg.SetFooterHTML("path/to/your/footer.html")
+	// pdfg.SetHeaderHTML("path/to/your/header.html") // Example
 
-  // Create a new input page from an URL
-  page := NewPage("https://godoc.org/github.com/SebastiaanKlippert/go-wkhtmltopdf")
+	// Add replacements for footer/header placeholders (e.g., [author])
+	pdfg.SetReplace("author", "Your Name")
 
-  // Set options for this page
-  page.FooterRight.Set("[page]")
-  page.FooterFontSize.Set(10)
-  page.Zoom.Set(0.95)
+	// --- Add Content ---
+	// Add a page directly from a Markdown file
+	mdPage := wkhtmltopdf.NewMarkdownPage("path/to/your/document.md")
+	// Optionally skip the first H1/H2 if used on a cover page
+	// mdPage.SkipFirstH1H2 = true
+	pdfg.AddPage(mdPage)
 
-  // Add to document
-  pdfg.AddPage(page)
+	// You can still add HTML pages or pages from readers
+	// pdfg.AddPage(wkhtmltopdf.NewPage("https://example.com"))
+	// pdfg.AddPage(wkhtmltopdf.NewPageReader(strings.NewReader("<h1>Hello</h1>")))
 
-  // Create PDF document in internal buffer
-  err = pdfg.Create()
-  if err != nil {
-    log.Fatal(err)
-  }
+	// --- Generate ---
+	err = pdfg.Create()
+	if err != nil {
+		log.Fatalf("Failed to create PDF: %v", err)
+	}
 
-  // Write buffer contents to file on disk
-  err = pdfg.WriteFile("./simplesample.pdf")
-  if err != nil {
-    log.Fatal(err)
-  }
+	// --- Save ---
+	err = pdfg.WriteFile("./output.pdf")
+	if err != nil {
+		log.Fatalf("Failed to write PDF file: %v", err)
+	}
 
-  fmt.Println("Done")
-  // Output: Done
+	log.Println("Successfully generated PDF: output.pdf")
 }
 ```
 
-As mentioned before, you can provide one document from stdin, this is done by using a [PageReader](https://godoc.org/github.com/SebastiaanKlippert/go-wkhtmltopdf#PageReader "GoDoc") object as input to AddPage. This is best constructed with  [NewPageReader](https://godoc.org/github.com/SebastiaanKlippert/go-wkhtmltopdf#NewPageReader "GoDoc") and will accept any io.Reader so this can be used with files from disk (os.File) or memory (bytes.Buffer) etc.  
-A simple example snippet:
+## Example with Auto-Generated Cover Page
+
+See `cmd/example/example.go` in this repository for a more detailed example that:
+
+1.  Reads the input Markdown file.
+2.  Extracts the first H1 and H2 titles.
+3.  Generates a temporary HTML file for the cover page with specific styling.
+4.  Uses `pdfg.SetCover()` to add the cover.
+5.  Creates a `MarkdownPage` with `SkipFirstH1H2 = true` to avoid duplicating the title on the first content page.
+6.  Generates the final PDF.
+
+## Input from `io.Reader` (Stdin)
+
+You can provide one document via an `io.Reader` using `NewPageReader`. This is useful for in-memory HTML or local files.
+
 ```go
-html := "<html>Hi</html>"
-pdfgen.AddPage(NewPageReader(strings.NewReader(html)))
+html := "<html><body><h1>Hello from Reader</h1></body></html>"
+pageReader := wkhtmltopdf.NewPageReader(strings.NewReader(html))
+// Set page-specific options if needed
+// pageReader.Zoom.Set(1.1)
+pdfg.AddPage(pageReader)
 ```
 
 # Saving to and loading from JSON
 
-The package now has the possibility to save the PDF Generator object as JSON and to create
-a new PDF Generator from a JSON file.
-All options and pages are saved in JSON, pages added using NewPageReader are read to memory before saving and then saved as Base64 encoded strings
-in the JSON file.
+JSON serialization/deserialization allows preparing the PDF structure separately from generation.
 
-This is useful to prepare a PDF file and generate the actual PDF elsewhere, for example on AWS Lambda.
-To create PDF Generator on the client, where wkhtmltopdf might not be present, function `NewPDFPreparer` can be used.
+- `Page` types save their input path/URL.
+- `PageReader` types save their content as Base64.
+- `MarkdownPage` types save their `InputPath` and `SkipFirstH1H2` flag. The content is **not** saved as Base64; the page is reconstructed from the `InputPath` upon deserialization using `NewPDFGeneratorFromJSON`.
 
-Use `NewPDFPreparer` to create a PDF Generator object on the client and `NewPDFGeneratorFromJSON` to reconstruct it on the server.
+Use `NewPDFPreparer` to create a `PDFGenerator` without needing `wkhtmltopdf` installed (e.g., client-side) and `NewPDFGeneratorFromJSON` to reconstruct it where `wkhtmltopdf` is available (e.g., server-side).
 
-```go 
+```go
 // Client code
-pdfg := NewPDFPreparer()
-htmlfile, err := ioutil.ReadFile("testdata/htmlsimple.html")
-if err != nil {
-  log.Fatal(err)
-}
-    
-pdfg.AddPage(NewPageReader(bytes.NewReader(htmlfile)))
-pdfg.Dpi.Set(600)
-    
-// The contents of htmlsimple.html are saved as base64 string in the JSON file
+pdfg := wkhtmltopdf.NewPDFPreparer()
+pdfg.PageSize.Set(wkhtmltopdf.PageSizeA4)
+pdfg.AddPage(wkhtmltopdf.NewMarkdownPage("report.md"))
+// ... set other options ...
+
 jb, err := pdfg.ToJSON()
-if err != nil {
-  log.Fatal(err)
-}
-    
+// ... send jb to server ...
+
 // Server code
-pdfgFromJSON, err := NewPDFGeneratorFromJSON(bytes.NewReader(jb))
+pdfgFromServer, err := wkhtmltopdf.NewPDFGeneratorFromJSON(bytes.NewReader(jb))
 if err != nil {
-  log.Fatal(err)
+    log.Fatal(err)
 }
-    
-err = pdfgFromJSON.Create()
-if err != nil {
-  log.Fatal(err)
-}    
+err = pdfgFromServer.Create()
+// ... handle PDF output ...
 ```
 
-For an example of running this in AWS Lambda see https://github.com/SebastiaanKlippert/go-wkhtmltopdf-lambda
+# Speed
 
-# Speed 
-The speed if pretty much determined by wkhtmltopdf itself, or if you use external source URLs, the time it takes to get and render the source HTML.
+The generation speed is primarily determined by `wkhtmltopdf` itself and the complexity/loading time of the source HTML/CSS/JS. The Go wrapper overhead is negligible.
 
-The go wrapper time is negligible with around 0.04ms for parsing an above average number of commandline options.
+---
 
-Benchmarks are included.
+_Original library by Sebastiaan Klippert._
+_Fork enhancements by LocalRivet._

@@ -664,6 +664,7 @@
   },
   "Pages": [
     {
+      "Type": "page",
       "PageOptions": {
         "Allow": {
           "Option": "allow",
@@ -940,9 +941,11 @@
         }
       },
       "InputFile": "https://www.google.com",
+      "InputPath": "",
       "Base64PageData": ""
     },
     {
+      "Type": "reader",
       "PageOptions": {
         "Allow": {
           "Option": "allow",
@@ -1214,6 +1217,7 @@
         }
       },
       "InputFile": "-",
+      "InputPath": "",
       "Base64PageData": "PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PHRpdGxlPldLSFRNTFRPUERGIFRFU1Q8L3RpdGxlPjwvaGVhZD48Ym9keT5IRUxMTyBQREY8L2JvZHk+PC9odG1sPg=="
     }
   ]

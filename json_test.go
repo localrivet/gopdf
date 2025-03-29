@@ -28,12 +28,13 @@ func TestPDFGenerator_ToJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected, err := os.ReadFile("testdata/expected.json")
+	expected, err := os.ReadFile("testdata/expected.json") // Restore reading expected file
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assert.JSONEq(t, string(expected), string(jb))
+	assert.JSONEq(t, string(expected), string(jb)) // Restore assertion
+	// t.Logf("Generated JSON:\n%s\n", string(jb)) // Remove logging
 }
 
 func TestNewPDFGeneratorFromJSON(t *testing.T) {
